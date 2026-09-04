@@ -29,7 +29,7 @@ The cal.diy image builds from source (multi-stage Next.js/Prisma build) — no m
 **Files:**
 - Create (on the VPS, not in the repo): `/swapfile`, and an fstab entry for it.
 
-- [ ] **Step 1: Check Docker is installed and current**
+- [x] **Step 1: Check Docker is installed and current**
 
 Run on the VPS:
 ```bash
@@ -37,14 +37,18 @@ docker --version && docker compose version
 ```
 Expected: both print a version (Docker 24+, Compose v2). If either is missing, install Docker per Hetzner's standard `get.docker.com` install script before continuing — do not proceed without this.
 
-- [ ] **Step 2: Check current memory and swap**
+Done: Docker 29.8.0, Compose v5.5.1. `rburdet` added to the `docker` group; `docker ps` runs without `sudo` after re-logging in.
+
+- [x] **Step 2: Check current memory and swap**
 
 ```bash
 free -h
 ```
 Expected: ~4GB total RAM. Note how much is already used by other services running on the box.
 
-- [ ] **Step 3: Add a 2GB swap file (skip if swap already present and >= 2GB)**
+Done: 3.7Gi total RAM.
+
+- [x] **Step 3: Add a 2GB swap file (skip if swap already present and >= 2GB)**
 
 ```bash
 sudo fallocate -l 2G /swapfile
@@ -54,21 +58,18 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-- [ ] **Step 4: Verify swap is active**
+- [x] **Step 4: Verify swap is active**
 
 ```bash
 swapon --show
 ```
 Expected: lists `/swapfile` with size 2G.
 
-- [ ] **Step 5: Create the deploy directory and clone this repo there**
+Done: `/swapfile` active, 2G.
 
-```bash
-sudo mkdir -p /opt/nachoibanez-booking
-sudo chown "$USER":"$USER" /opt/nachoibanez-booking
-git clone git@github.com:rburdet/nachoibanez-booking.git /opt/nachoibanez-booking
-```
-Expected: `/opt/nachoibanez-booking` contains `README.md`, `docs/`, `.gitignore`.
+- [x] **Step 5: Deploy directory**
+
+The repo is already cloned at `/home/rburdet/nachoibanez-booking` (this working directory) — used as the deploy directory in place of `/opt/nachoibanez-booking` from the original spec. No further action needed for this step.
 
 No commit for this task — it's VPS-side setup, not a repo change.
 
@@ -245,7 +246,7 @@ git push
 - [ ] **Step 3: Run it on the VPS (dry structural check only — no real secrets yet)**
 
 ```bash
-cd /opt/nachoibanez-booking
+cd /home/rburdet/nachoibanez-booking
 git pull
 ./scripts/deploy.sh
 ```
@@ -268,7 +269,7 @@ openssl rand -base64 32   # NEXTAUTH_SECRET
 openssl rand -base64 24   # CALENDSO_ENCRYPTION_KEY
 ```
 
-- [ ] **Step 2: Create `/opt/nachoibanez-booking/.env` from `.env.example`**
+- [ ] **Step 2: Create `/home/rburdet/nachoibanez-booking/.env` from `.env.example`**
 
 Copy `.env.example` to `.env` and fill in:
 - `POSTGRES_PASSWORD` — a fresh random value (e.g. `openssl rand -hex 24`)
@@ -461,7 +462,7 @@ git push
 - [ ] **Step 6: Run it once by hand and verify**
 
 ```bash
-cd /opt/nachoibanez-booking
+cd /home/rburdet/nachoibanez-booking
 git pull
 ./scripts/backup.sh
 rclone ls r2:nachoibanez-booking-backups/backups/
@@ -475,7 +476,7 @@ crontab -e
 ```
 Add:
 ```
-0 3 * * * /opt/nachoibanez-booking/scripts/backup.sh >> /var/log/nachoibanez-booking-backup.log 2>&1
+0 3 * * * /home/rburdet/nachoibanez-booking/scripts/backup.sh >> /var/log/nachoibanez-booking-backup.log 2>&1
 ```
 
 ---
@@ -487,7 +488,7 @@ Add:
 - [ ] **Step 1: Restart the whole stack**
 
 ```bash
-cd /opt/nachoibanez-booking
+cd /home/rburdet/nachoibanez-booking
 docker compose restart
 ```
 
