@@ -86,7 +86,7 @@ No commit for this task — it's VPS-side setup, not a repo change.
 - Produces: the `stack` Docker network and service names `database`, `calcom`, `cloudflared` that later tasks attach to and exec into.
 - Consumes: `vendor/cal.diy` as the build context for the `calcom` service (populated by Task 1's sibling script in Task 4, not this task).
 
-- [ ] **Step 1: Add `vendor/` to `.gitignore`**
+- [x] **Step 1: Add `vendor/` to `.gitignore`**
 
 ```
 .env
@@ -96,7 +96,7 @@ node_modules/
 vendor/
 ```
 
-- [ ] **Step 2: Write `docker-compose.yml`**
+- [x] **Step 2: Write `docker-compose.yml`**
 
 Only two of upstream cal.diy's five services are needed: `database` and `calcom` (the web app). `redis`, `calcom-api` (the v2 public API) and `studio` (Prisma Studio) are exclusively used by the v2 API service — nothing here calls the v2 API, so they're dropped (confirmed: `redis` and `calcom-api`-only env vars never appear in cal.diy's own `.env.example`).
 
@@ -156,7 +156,7 @@ services:
       - calcom
 ```
 
-- [ ] **Step 3: Write `.env.example`**
+- [x] **Step 3: Write `.env.example`**
 
 Documents every variable the compose file and cal.diy's `start.sh` entrypoint need, with no real secrets:
 
@@ -194,7 +194,7 @@ CLOUDFLARE_TUNNEL_TOKEN=
 R2_BUCKET_NAME=
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docker-compose.yml .env.example .gitignore
