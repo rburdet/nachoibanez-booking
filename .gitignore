@@ -2,3 +2,4 @@
 *.env.local
 backups/
 node_modules/
+vendor/
