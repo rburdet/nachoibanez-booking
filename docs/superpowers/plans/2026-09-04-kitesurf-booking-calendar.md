@@ -18,7 +18,8 @@
 - Admin access has no separate password login of its own beyond Cloudflare Access OTP + cal.diy's built-in auth — the two allowlisted emails are Rodrigo's and Nacho's.
 - Public booking pages (`/<username>`, `/<username>/<event-slug>`, `/booking/<uid>`) must never sit behind Cloudflare Access — only Nacho/Rodrigo hit an Access wall, students never do.
 - Subdomain: `clases.rburdet.com`. Repo: `github.com/rburdet/nachoibanez-booking` (already created, public, `main` branch).
-- cal.diy application source is a pinned upstream dependency (tag `v6.2.0`), not vendored into this repo's git history — cloned into `vendor/cal.diy` at deploy time, gitignored.
+- cal.diy application source is a pinned upstream dependency (tag `v6.2.0`), not vendored into this repo's git history.
+- **Revised during implementation (2026-09-04):** the `calcom` image is built in CI (`.github/workflows/build-calcom-image.yml`) and pulled from GHCR, not built on the VPS. A real build attempt on the VPS drove memory usage to ~3GB used + 3.1GB of 4GB swap and measurably degraded another production service (`guardias`) sharing the box, before Turbopack's compile step even started. The VPS has only 2 vCPUs / 4GB RAM shared with other live services — insufficient headroom for this monorepo's build. See Task 3 for the CI-build approach.
 
 ---
 
@@ -125,12 +126,11 @@ services:
 
   calcom:
     container_name: calcom
-    build:
-      context: ./vendor/cal.diy
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_WEBAPP_URL: ${NEXT_PUBLIC_WEBAPP_URL}
+    # Built in CI (.github/workflows/build-calcom-image.yml), pulled here — see
+    # the revision note in Global Constraints for why this isn't built on the VPS.
+    image: ghcr.io/rburdet/nachoibanez-booking-calcom:v6.2.0
     restart: unless-stopped
+    shm_size: '1gb'
     networks:
       - stack
     ports:
@@ -204,16 +204,82 @@ git push
 
 ---
 
-## Task 3: Vendor cal.diy source + deploy script
+## Task 3: Build calcom image in CI + deploy script
+
+**Revised during implementation (2026-09-04).** Originally this task vendored cal.diy source
+into `vendor/cal.diy` on the VPS and built the image there with `docker compose up -d --build`.
+A real attempt showed the build (`yarn install` alone, before any Next.js compilation) pushes
+this 4GB VPS to ~3GB RAM + 3.1GB of 4GB swap used, and measurably degraded the `guardias`
+service also running on the box (its `next-server` process went into disk-wait state). The VPS
+has only 2 vCPU / 4GB RAM shared with other live services — not enough headroom for this
+monorepo's build. Building in CI (ample RAM, isolated) and pulling the finished image instead
+avoids the problem entirely and never touches the shared VPS's resources.
 
 **Files:**
+- Create: `.github/workflows/build-calcom-image.yml`
 - Create: `scripts/deploy.sh`
 
 **Interfaces:**
-- Consumes: `docker-compose.yml` from Task 2.
-- Produces: `vendor/cal.diy` (gitignored working tree) that Task 2's `calcom` build context reads from.
+- Produces: `ghcr.io/rburdet/nachoibanez-booking-calcom:v6.2.0`, consumed by `docker-compose.yml`'s
+  `calcom` service (Task 2) and pulled by `scripts/deploy.sh`.
 
-- [x] **Step 1: Write `scripts/deploy.sh`**
+- [x] **Step 1: Write `.github/workflows/build-calcom-image.yml`**
+
+Manually triggered (`workflow_dispatch`) job that checks out `calcom/cal.diy` at the pinned tag,
+builds it, and pushes to GHCR using the repo's own `GITHUB_TOKEN` (no extra secrets needed):
+
+```yaml
+name: Build and push calcom image
+
+on:
+  workflow_dispatch:
+
+env:
+  CAL_DIY_TAG: v6.2.0
+  IMAGE: ghcr.io/${{ github.repository_owner }}/nachoibanez-booking-calcom
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout cal.diy at pinned tag
+        uses: actions/checkout@v4
+        with:
+          repository: calcom/cal.diy
+          ref: ${{ env.CAL_DIY_TAG }}
+          path: cal.diy
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./cal.diy
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.CAL_DIY_TAG }}
+          build-args: |
+            NEXT_PUBLIC_WEBAPP_URL=https://clases.rburdet.com
+```
+
+- [ ] **Step 2: Run the workflow and make the GHCR package public**
+
+In GitHub: **Actions → Build and push calcom image → Run workflow**. Once it finishes, go to the
+repo's **Packages** (or `github.com/rburdet?tab=packages`) → `nachoibanez-booking-calcom` →
+**Package settings → Change visibility → Public**. This lets the VPS `docker pull` without
+authenticating to GHCR.
+
+- [x] **Step 3: Write `scripts/deploy.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -221,39 +287,32 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CAL_DIY_TAG="v6.2.0"
-VENDOR_DIR="vendor/cal.diy"
-
-if [ -d "$VENDOR_DIR/.git" ]; then
-  git -C "$VENDOR_DIR" fetch --tags origin
-  git -C "$VENDOR_DIR" checkout "$CAL_DIY_TAG"
-else
-  git clone --branch "$CAL_DIY_TAG" --depth 1 https://github.com/calcom/cal.diy.git "$VENDOR_DIR"
-fi
-
-docker compose up -d --build
+# The calcom image is built in CI (.github/workflows/build-calcom-image.yml)
+# and published to GHCR — this VPS only pulls it, it never builds the
+# Next.js/Prisma monorepo locally (see docker-compose.yml for why).
+docker compose pull
+docker compose up -d
 ```
 
-- [x] **Step 2: Make it executable and commit**
+- [x] **Step 4: Make it executable and commit**
 
 ```bash
 chmod +x scripts/deploy.sh
-git add scripts/deploy.sh
-git commit -m "Add deploy script that pins and vendors cal.diy v6.2.0"
+git add scripts/deploy.sh .github/workflows/build-calcom-image.yml docker-compose.yml
+git commit -m "Build calcom image in CI instead of on the VPS"
 git push
 ```
 
-- [x] **Step 3: Run it on the VPS (dry structural check only — no real secrets yet)**
+- [ ] **Step 5: Run it on the VPS once the image is public**
 
 ```bash
 cd /home/rburdet/nachoibanez-booking
 git pull
 ./scripts/deploy.sh
 ```
-Expected: `vendor/cal.diy` gets cloned at tag `v6.2.0`. The `docker compose up -d --build` call will fail at this point because `.env` doesn't exist yet with real secrets — that's expected; this step only confirms the clone succeeds and the build context is valid. Confirm with:
-```bash
-test -d vendor/cal.diy/.git && echo "vendored ok"
-```
+Expected: `docker compose pull` fetches the GHCR image without needing a login (package is
+public from Step 2); `database` and `calcom` start. `cloudflared` will still fail to find a
+token until Task 5 — that's expected at this point.
 
 ---
 
@@ -262,26 +321,34 @@ test -d vendor/cal.diy/.git && echo "vendored ok"
 **Files:**
 - Create (on the VPS only, not committed): `.env`
 
-- [ ] **Step 1: Generate the two secrets**
+- [x] **Step 1: Generate the two secrets**
 
 ```bash
 openssl rand -base64 32   # NEXTAUTH_SECRET
 openssl rand -base64 24   # CALENDSO_ENCRYPTION_KEY
 ```
 
-- [ ] **Step 2: Create `/home/rburdet/nachoibanez-booking/.env` from `.env.example`**
+- [x] **Step 2: Create `/home/rburdet/nachoibanez-booking/.env` from `.env.example`**
 
 Copy `.env.example` to `.env` and fill in:
 - `POSTGRES_PASSWORD` — a fresh random value (e.g. `openssl rand -hex 24`)
 - `NEXTAUTH_SECRET`, `CALENDSO_ENCRYPTION_KEY` — from Step 1
-- `EMAIL_SERVER_PASSWORD` — the Resend API key (create one in the Resend dashboard scoped to sending only; the "sending domain" must already be verified for `rburdet.com` in Resend, since `EMAIL_FROM=reservas@rburdet.com`)
-- `CLOUDFLARE_TUNNEL_TOKEN` — leave blank until Task 5
-- `R2_BUCKET_NAME` — leave blank until Task 7
+- `EMAIL_SERVER_PASSWORD` — reused the existing Resend account/API key from the `hurabeach`
+  project (same machine); `EMAIL_FROM` set to `reservas@emails.rburdet.com` to match that
+  account's already-verified sending domain (see `.env.example` comment)
+- `CLOUDFLARE_TUNNEL_TOKEN` — set (Task 5 tunnel token, provided ahead of schedule)
+- `R2_BUCKET_NAME` — leave blank until Task 8
 
-- [ ] **Step 3: Bring up database + calcom only (cloudflared has no token yet)**
+Done: all of the above are set in `/home/rburdet/nachoibanez-booking/.env` on the VPS.
+
+- [ ] **Step 3: Bring up database + calcom (pulls the image built in Task 3)**
+
+Blocked on Task 3 Step 2 (running the GHCR build workflow + making the package public) — needs
+GitHub UI/CLI access this session doesn't have. Once the image is public:
 
 ```bash
-docker compose up -d --build database calcom
+docker compose pull
+docker compose up -d database calcom
 ```
 
 - [ ] **Step 4: Watch the calcom container come up**

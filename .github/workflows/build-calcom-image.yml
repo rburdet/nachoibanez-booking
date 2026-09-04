@@ -1,0 +1,41 @@
+name: Build and push calcom image
+
+on:
+  workflow_dispatch:
+
+env:
+  CAL_DIY_TAG: v6.2.0
+  IMAGE: ghcr.io/${{ github.repository_owner }}/nachoibanez-booking-calcom
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout cal.diy at pinned tag
+        uses: actions/checkout@v4
+        with:
+          repository: calcom/cal.diy
+          ref: ${{ env.CAL_DIY_TAG }}
+          path: cal.diy
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./cal.diy
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.CAL_DIY_TAG }}
+          build-args: |
+            NEXT_PUBLIC_WEBAPP_URL=https://clases.rburdet.com

@@ -22,12 +22,13 @@ services:
 
   calcom:
     container_name: calcom
-    build:
-      context: ./vendor/cal.diy
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_WEBAPP_URL: ${NEXT_PUBLIC_WEBAPP_URL}
+    # Built in CI (.github/workflows/build-calcom-image.yml) and pulled here —
+    # building this Next.js/Prisma monorepo locally needs more RAM than this
+    # shared 4GB VPS has free, and drove it into swap heavily enough to
+    # degrade other services running on the same box.
+    image: ghcr.io/rburdet/nachoibanez-booking-calcom:v6.2.0
     restart: unless-stopped
+    shm_size: '1gb'
     networks:
       - stack
     ports:
