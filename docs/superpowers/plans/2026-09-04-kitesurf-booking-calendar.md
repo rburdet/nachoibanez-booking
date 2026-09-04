@@ -213,7 +213,7 @@ git push
 - Consumes: `docker-compose.yml` from Task 2.
 - Produces: `vendor/cal.diy` (gitignored working tree) that Task 2's `calcom` build context reads from.
 
-- [ ] **Step 1: Write `scripts/deploy.sh`**
+- [x] **Step 1: Write `scripts/deploy.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -234,7 +234,7 @@ fi
 docker compose up -d --build
 ```
 
-- [ ] **Step 2: Make it executable and commit**
+- [x] **Step 2: Make it executable and commit**
 
 ```bash
 chmod +x scripts/deploy.sh
@@ -243,7 +243,7 @@ git commit -m "Add deploy script that pins and vendors cal.diy v6.2.0"
 git push
 ```
 
-- [ ] **Step 3: Run it on the VPS (dry structural check only — no real secrets yet)**
+- [x] **Step 3: Run it on the VPS (dry structural check only — no real secrets yet)**
 
 ```bash
 cd /home/rburdet/nachoibanez-booking
